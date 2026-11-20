@@ -55,7 +55,7 @@ def _key() -> str:
         if result.returncode == 0:
             value = result.stdout.strip()
     if not value:
-        raise RuntimeError("API Key ausente: configure RODIN_API_KEY ou o item 'hyper3d-business' no Keychain")
+        raise RuntimeError("Missing API key: set RODIN_API_KEY or the 'hyper3d-business' Keychain item")
     return value
 
 
@@ -63,7 +63,7 @@ def _request(method: str, endpoint: str, **kwargs):
     """Only fixed REST endpoints, never arbitrary URLs supplied by tools."""
     if endpoint not in {"rodin", "rodin_agentic", "bang", "rodin_texture_only", "rigging", "polygen",
                         "rigging_animations", "images", "status", "download", "check_balance"}:
-        raise ValueError("Endpoint não permitido")
+        raise ValueError("Endpoint not allowed")
     response = requests.request(
         method, f"{API}/{endpoint}",
         headers={"Authorization": f"Bearer {_key()}"},
@@ -76,9 +76,9 @@ def _request(method: str, endpoint: str, **kwargs):
 def _api(method: str, endpoint: str, **kwargs) -> dict:
     payload = _request(method, endpoint, **kwargs)
     if not isinstance(payload, dict):
-        raise RuntimeError("Formato inesperado de resposta da API")
+        raise RuntimeError("Unexpected API response format")
     if payload.get("error"):
-        raise RuntimeError(f"Erro Rodin: {payload['error']}: {payload.get('message', '')}")
+        raise RuntimeError(f"Rodin error: {payload['error']}: {payload.get('message', '')}")
     return payload
 
 
@@ -94,37 +94,37 @@ def _asset_id(value: str | None) -> str | None:
         try:
             UUID(value)
         except ValueError as exc:
-            raise ValueError("asset_id deve ser um UUID") from exc
+            raise ValueError("asset_id must be a UUID") from exc
     return value
 
 
 def _path(value: str, extensions: set[str], size_limit: int) -> Path:
     path = Path(value).expanduser().resolve(strict=True)
-    _check(path.is_file() and path.suffix.lower() in extensions, f"Arquivo não permitido: {path.name}")
-    _check(0 < path.stat().st_size <= size_limit, f"Tamanho fora do limite: {path.name}")
+    _check(path.is_file() and path.suffix.lower() in extensions, f"File not allowed: {path.name}")
+    _check(0 < path.stat().st_size <= size_limit, f"File size out of range: {path.name}")
     return path
 
 
 def _images(paths: list[str] | None, *, required: bool = False) -> list[Path]:
     values = paths or []
-    _check(not required or bool(values), "Informe pelo menos uma imagem")
-    _check(len(values) <= 5, "Máximo de cinco imagens")
+    _check(not required or bool(values), "Provide at least one image")
+    _check(len(values) <= 5, "At most five images")
     return [_path(v, IMAGE_EXTENSIONS, MAX_IMAGE_SIZE) for v in values]
 
 
 def _validate_common(prompt: str, files: list[Path], fmt: str,
                      quality_override: int | None, max_faces: int,
                      seed: int | None, bbox_condition: list[int] | None) -> None:
-    _check(bool(prompt.strip() or files), "Informe prompt ou imagem(ns)")
-    _check(len(prompt) <= 1024, "Prompt: limite de 1024 caracteres")
-    _check(fmt in FORMATS, "Formato não suportado")
+    _check(bool(prompt.strip() or files), "Provide a prompt or image(s)")
+    _check(len(prompt) <= 1024, "Prompt is limited to 1024 characters")
+    _check(fmt in FORMATS, "Unsupported format")
     if quality_override is not None:
-        _check(500 <= quality_override <= max_faces, f"quality_override deve ser 500..{max_faces}")
+        _check(500 <= quality_override <= max_faces, f"quality_override must be 500..{max_faces}")
     if seed is not None:
-        _check(0 <= seed <= 65535, "seed deve ser 0..65535")
+        _check(0 <= seed <= 65535, "seed must be 0..65535")
     if bbox_condition is not None:
         _check(len(bbox_condition) == 3 and all(type(v) is int and 1 <= v <= 2048 for v in bbox_condition),
-               "bbox_condition requer três inteiros entre 1 e 2048 (X, Y, Z)")
+               "bbox_condition requires three integers between 1 and 2048 (X, Y, Z)")
 
 
 def _field(value) -> str:
@@ -136,8 +136,8 @@ def _field(value) -> str:
 
 
 def _estimate(tier: str, texture_mode: str) -> float:
-    _check(tier in TIERS, f"Tier inválido: {tier}")
-    _check(texture_mode in TEXTURE_MODES, "texture_mode inválido")
+    _check(tier in TIERS, f"Invalid tier: {tier}")
+    _check(texture_mode in TEXTURE_MODES, "Invalid texture_mode")
     return .5 + (.5 if tier == "Gen-2.5-Extreme-High" else 0) + (2 if texture_mode == "extreme-high" else 0)
 
 
@@ -148,9 +148,9 @@ def _paid(endpoint: str, fields: dict, paths: list[tuple[str, Path]], cost: floa
                "parameters": {k: v for k, v in fields.items() if v is not None},
                "files": [{"field": field, "name": file.name} for field, file in paths]}
     if not approved_spend:
-        return {"submitted": False, "reason": "Aprovação explícita necessária; nenhum crédito gasto", **preview}
+        return {"submitted": False, "reason": "Explicit approval required; no credits spent", **preview}
     _check(math.isfinite(max_credits) and max_credits >= cost and max_credits > 0,
-           f"Custo estimado {cost} excede orçamento finito max_credits={max_credits}")
+           f"Estimated cost {cost} exceeds finite budget max_credits={max_credits}")
     parts: list[tuple[str, tuple]] = [
         (key, (None, _field(value))) for key, value in fields.items() if value is not None
     ]
@@ -161,7 +161,7 @@ def _paid(endpoint: str, fields: dict, paths: list[tuple[str, Path]], cost: floa
             parts.append((field, (path.name, stack.enter_context(path.open("rb")), mime)))
         payload = _api("POST", endpoint, files=parts)
     if not payload.get("uuid"):
-        raise RuntimeError(f"A API não retornou UUID: {payload.get('message', 'tarefa não confirmada')}")
+        raise RuntimeError(f"The API returned no UUID: {payload.get('message', 'task not confirmed')}")
     return {"submitted": True, **preview,
             "actual_credits": payload.get("consumed"), "result": payload}
 
@@ -213,14 +213,14 @@ def rodin_estimate(
     elif operation in {"bang", "rigging", "polygen", "images"}:
         credits = .5
     elif operation == "texture":
-        _check(texture_mode in TEXTURE_MODES, "texture_mode inválido")
+        _check(texture_mode in TEXTURE_MODES, "Invalid texture_mode")
         credits = .5 + (2 if texture_mode == "extreme-high" else 0)
     elif operation == "agentic":
         credits = {"basic": .5, "standard": 1.0, "pro": 2.0}[agentic_tier]
     else:
-        raise ValueError("operation inválida")
+        raise ValueError("Invalid operation")
     return {"operation": operation, "estimated_credits": credits, "estimate_only": True,
-            "note": "Valores publicados em out/2026; consultar documentação antes de executar. Não é reserva de créditos."}
+            "note": "Prices published in Nov 2026; check the docs before running. This does not reserve credits."}
 
 
 @mcp.tool()
@@ -252,14 +252,14 @@ def rodin_generate(
     files = _images(image_paths)
     max_faces = 200000 if mesh_mode == "Quad" else (2000000 if tier in ("Gen-2.5-High", "Gen-2.5-Extreme-High") else 1000000)
     _validate_common(prompt, files, geometry_file_format, quality_override, max_faces, seed, bbox_condition)
-    _check(tier in TIERS, "tier inválido")
-    _check(mesh_mode in {"Quad", "Raw"}, "mesh_mode inválido")
+    _check(tier in TIERS, "Invalid tier")
+    _check(mesh_mode in {"Quad", "Raw"}, "Invalid mesh_mode")
     if detail_level is not None:
-        _check(1 <= detail_level <= 3, "detail_level deve ser 1..3")
-    _check(not is_micro or tier == "Gen-2.5-Extreme-High", "is_micro só no Extreme-High")
-    _check(geometry_instruct_mode != "creative" or tier in TIERS[2:], "creative requer Medium ou superior")
+        _check(1 <= detail_level <= 3, "detail_level must be 1..3")
+    _check(not is_micro or tier == "Gen-2.5-Extreme-High", "is_micro requires Gen-2.5-Extreme-High")
+    _check(geometry_instruct_mode != "creative" or tier in TIERS[2:], "creative requires Gen-2.5-Medium or higher")
     if image_labels:
-        _check(bool(files) and len(image_labels) <= len(files) and all(x in LABELS for x in image_labels), "image_labels inválidos")
+        _check(bool(files) and len(image_labels) <= len(files) and all(x in LABELS for x in image_labels), "Invalid image_labels")
     cost = _estimate(tier, texture_mode)
     fields = {"tier": tier, "mesh_mode": mesh_mode, "quality": quality, "texture_mode": texture_mode,
               "material": material, "geometry_file_format": geometry_file_format,
@@ -285,7 +285,7 @@ def rodin_agentic(
     """PAID, BETA: Rodin Agentic auto-chooses 3D generation strategies from 1–5 images.
     Tiers basic 0.5 credit, standard 1, pro 2. Requires explicit approval."""
     imgs = _images(image_paths, required=True)
-    _check(len(prompt) <= 1024, "Prompt muito longo")
+    _check(len(prompt) <= 1024, "Prompt is too long")
     cost = {"basic": .5, "standard": 1.0, "pro": 2.0}[tier]
     return _paid("rodin_agentic", {"tier": tier, "prompt": prompt or None, "export_type": export_type},
                  [("images", p) for p in imgs], cost, approved_spend, max_credits)
@@ -303,13 +303,13 @@ def rodin_bang_asset(
 ) -> dict:
     """PAID: BANG! split/refine previously generated Rodin asset using its top-level uuid.
     Consumes 0.5 credit. Requires explicit approval."""
-    _check(bool(asset_id.strip()), "asset_id obrigatório")
-    _check(1 <= strength <= 12, "strength deve ser 1..12")
-    _check(0 <= escore <= 10 and 0 <= reference_scale <= 1, "escore/reference_scale fora do intervalo")
+    _check(bool(asset_id.strip()), "asset_id is required")
+    _check(1 <= strength <= 12, "strength must be 1..12")
+    _check(0 <= escore <= 10 and 0 <= reference_scale <= 1, "escore/reference_scale out of range")
     if seed is not None:
-        _check(0 <= seed <= 65535, "seed inválido")
+        _check(0 <= seed <= 65535, "Invalid seed")
     if quality_override is not None:
-        _check(500 <= quality_override <= (50000 if mesh_mode == "Quad" else 2000000), "quality_override fora do limite")
+        _check(500 <= quality_override <= (50000 if mesh_mode == "Quad" else 2000000), "quality_override out of range")
     return _paid("bang", {"asset_id": asset_id, "strength": strength,
                           "mesh_mode": mesh_mode, "quality_override": quality_override,
                           "material": material, "resolution": resolution,
@@ -334,14 +334,14 @@ def rodin_bang_model(
     model = _path(model_path, MODEL_EXTENSIONS, MAX_MODEL_SIZE)
     img = _path(image_path, IMAGE_EXTENSIONS, MAX_IMAGE_SIZE) if image_path else None
     _check(img is not None or (material == "None" and not instruction),
-           "Imagem de referência obrigatória com materiais ou instruction")
-    _check(1 <= strength <= 12, "strength deve ser 1..12")
-    _check(0 <= escore <= 10 and 0 <= reference_scale <= 1, "escore/reference_scale fora do intervalo")
+           "A reference image is required with materials or instruction")
+    _check(1 <= strength <= 12, "strength must be 1..12")
+    _check(0 <= escore <= 10 and 0 <= reference_scale <= 1, "escore/reference_scale out of range")
     if seed is not None:
-        _check(0 <= seed <= 65535, "seed inválido")
+        _check(0 <= seed <= 65535, "Invalid seed")
     if quality_override is not None:
-        _check(500 <= quality_override <= (50000 if mesh_mode == "Quad" else 2000000), "quality_override fora do limite")
-    _check(len(prompt) <= 1024, "prompt muito longo")
+        _check(500 <= quality_override <= (50000 if mesh_mode == "Quad" else 2000000), "quality_override out of range")
+    _check(len(prompt) <= 1024, "Prompt is too long")
     paths = [("model", model)]
     if img:
         paths.append(("image", img))
@@ -369,10 +369,10 @@ def rodin_texture(
     Costs 0.5 credit (+2 for extreme-high); requires explicit approval."""
     img = _path(image_path, IMAGE_EXTENSIONS, MAX_IMAGE_SIZE)
     model = _path(model_path, MODEL_EXTENSIONS, MAX_MODEL_SIZE)
-    _check(len(prompt) <= 1024, "prompt muito longo")
-    _check(0 <= escore <= 10 and .5 <= reference_scale <= 1, "escore/reference_scale fora do intervalo")
+    _check(len(prompt) <= 1024, "Prompt is too long")
+    _check(0 <= escore <= 10 and .5 <= reference_scale <= 1, "escore/reference_scale out of range")
     if seed is not None:
-        _check(0 <= seed <= 65535, "seed inválido")
+        _check(0 <= seed <= 65535, "Invalid seed")
     cost = .5 + (2 if texture_mode == "extreme-high" else 0)
     return _paid("rodin_texture_only",
                  {"prompt": prompt or None, "texture_mode": texture_mode,
@@ -413,40 +413,40 @@ def rodin_rigging(
     Defaults return a preview only. Explicit spending approval and budget are required.
     """
     asset_id = _asset_id(asset_id)
-    _check(bool(asset_id) != bool(model_path), "Informe exatamente um de asset_id ou model_path")
+    _check(bool(asset_id) != bool(model_path), "Provide exactly one of asset_id or model_path")
     _check(bone_template in {"auto", "human", "quadruped", "bird", "dragon", "kaiju", "custom"},
-           "bone_template inválido")
-    _check(geometry_file_format in {"glb", "fbx", "usdz"}, "Rigging exporta apenas glb, fbx ou usdz")
-    _check(export_skeleton_type in {"rodin"} | ENGINE_SKELETONS, "export_skeleton_type inválido")
+           "Invalid bone_template")
+    _check(geometry_file_format in {"glb", "fbx", "usdz"}, "Rigging exports only glb, fbx or usdz")
+    _check(export_skeleton_type in {"rodin"} | ENGINE_SKELETONS, "Invalid export_skeleton_type")
     if export_skeleton_type in ENGINE_SKELETONS:
         _check(bool(asset_id) and geometry_file_format == "fbx" and bone_template in {"auto", "human"},
-               "Esqueleto UE5/Unity/ActorCore requer asset_id, fbx e rig humanoide (auto ou human)")
-    _check(rigging_mode in {"generate", "modify"}, "rigging_mode inválido")
-    _check(skinning_method in {"shell", "core"}, "skinning_method inválido")
-    _check(material in {None, "PBR", "Shaded", "Hybrid", "All", "None"}, "material inválido")
-    _check(geometry_file_format in FORMATS, "geometry_file_format inválido")
+               "UE5/Unity/ActorCore skeletons require asset_id, fbx and a humanoid rig (auto or human)")
+    _check(rigging_mode in {"generate", "modify"}, "Invalid rigging_mode")
+    _check(skinning_method in {"shell", "core"}, "Invalid skinning_method")
+    _check(material in {None, "PBR", "Shaded", "Hybrid", "All", "None"}, "Invalid material")
+    _check(geometry_file_format in FORMATS, "Invalid geometry_file_format")
     description = skeleton_description.strip() if skeleton_description else None
     if rigging_mode == "modify":
         _check(bone_template != "auto" and bool(description) and hierarchy is None,
-               "modify requer template explícito, skeleton_description e nenhuma hierarchy")
+               "modify requires an explicit template, skeleton_description and no hierarchy")
     elif bone_template == "custom":
-        _check(bool(hierarchy) != bool(description), "custom requer hierarchy OU skeleton_description")
+        _check(bool(hierarchy) != bool(description), "custom requires hierarchy OR skeleton_description")
     else:
         _check(hierarchy is None and description is None,
-               "Templates auto/human/quadruped não aceitam hierarchy ou skeleton_description em generate")
+               "Preset templates do not accept hierarchy or skeleton_description in generate mode")
     if hierarchy is not None:
-        _check(bool(hierarchy), "hierarchy vazia")
+        _check(bool(hierarchy), "Empty hierarchy")
         for index, node in enumerate(hierarchy):
             _check(isinstance(node, dict) and isinstance(node.get("name"), str) and bool(node["name"].strip()),
-                   "Cada osso requer name")
+                   "Every bone requires a name")
             parent = node.get("parent")
             _check(type(parent) is int and -1 <= parent < len(hierarchy) and parent != index,
-                   "parent de osso inválido")
+                   "Invalid bone parent")
         for index in range(len(hierarchy)):
             seen = set()
             current = index
             while current != -1:
-                _check(current not in seen, "hierarchy contém ciclo")
+                _check(current not in seen, "hierarchy contains a cycle")
                 seen.add(current)
                 current = hierarchy[current]["parent"]
     paths = []
@@ -455,16 +455,16 @@ def rodin_rigging(
     if image_path:
         paths.append(("image", _path(image_path, {".jpg", ".jpeg", ".png", ".webp"}, MAX_IMAGE_SIZE)))
     _check(not model_path or material in {None, "None"} or bool(image_path),
-           "Modelo com material requer imagem de referência")
+           "A model with materials requires a reference image")
     _check(bone_template != "auto" or bool(image_path or asset_id),
-           "auto requer imagem; asset_id pode reutilizar a imagem original")
+           "auto requires an image; asset_id can reuse its original input image")
     presets = animation_presets or []
     clips = animation_paths or []
-    _check(not (presets and clips), "animation_presets e animation_paths são mutuamente exclusivos")
-    _check(len(presets) + len(clips) <= 10, "Máximo de dez animações")
-    _check(all(isinstance(p, str) and bool(p.strip()) for p in presets), "Preset de animação vazio")
-    _check(len(set(presets)) == len(presets), "Presets de animação devem ser distintos")
-    _check(not (in_place and clips), "in_place não se aplica a animation_paths")
+    _check(not (presets and clips), "animation_presets and animation_paths are mutually exclusive")
+    _check(len(presets) + len(clips) <= 10, "At most ten animations")
+    _check(all(isinstance(p, str) and bool(p.strip()) for p in presets), "Empty animation preset")
+    _check(len(set(presets)) == len(presets), "Animation presets must be distinct")
+    _check(not (in_place and clips), "in_place does not apply to animation_paths")
     paths.extend(("animation_files", _path(p, {".fbx"}, 25 * 1024 * 1024)) for p in clips)
     fields = {"asset_id": asset_id, "bone_template": bone_template, "rigging_mode": rigging_mode,
               "skinning_method": skinning_method, "hierarchy": hierarchy,
@@ -488,13 +488,13 @@ def rodin_animation_catalog(
     rodin_rigging.animation_presets. Categories do not guarantee skeleton compatibility.
     """
     if category is not None:
-        _check(category in ANIMATION_CATEGORIES, "category inválida")
+        _check(category in ANIMATION_CATEGORIES, "Invalid category")
     payload = _request("GET", "rigging_animations",
                        params={"category": category} if category is not None else None)
     if isinstance(payload, dict) and payload.get("error"):
-        raise RuntimeError(f"Erro Rodin: {payload['error']}: {payload.get('message', '')}")
+        raise RuntimeError(f"Rodin error: {payload['error']}: {payload.get('message', '')}")
     if not isinstance(payload, list):
-        raise RuntimeError("Formato inesperado do catálogo de animações")
+        raise RuntimeError("Unexpected animation catalog format")
     return {"category": category, "count": len(payload), "animations": payload}
 
 
@@ -521,21 +521,21 @@ def rodin_polygen(
     Defaults return a preview only. Explicit spending approval and budget are required.
     """
     asset_id = _asset_id(asset_id)
-    _check(not (asset_id and model_path), "asset_id e model_path são mutuamente exclusivos")
+    _check(not (asset_id and model_path), "asset_id and model_path are mutually exclusive")
     images = _images(image_paths)
     prompt = prompt.strip()
-    _check(len(prompt) <= 1024, "Prompt: limite de 1024 caracteres")
-    _check(bool(asset_id or model_path or images or prompt), "Informe asset_id, model_path, imagens ou prompt")
+    _check(len(prompt) <= 1024, "Prompt is limited to 1024 characters")
+    _check(bool(asset_id or model_path or images or prompt), "Provide asset_id, model_path, images or a prompt")
     if face_count is not None:
-        _check(200 <= face_count <= 10000, "face_count deve ser 200..10000")
+        _check(200 <= face_count <= 10000, "face_count must be 200..10000")
     if model_path:
         _check(material is None and texture_mode is None and not uhd_texture and not prompt,
-               "Modelo enviado não gera texturas: não use material, texture_mode, uhd_texture ou prompt")
+               "Uploaded models get no new textures: do not set material, texture_mode, uhd_texture or prompt")
     else:
-        _check(transfer_texture, "transfer_texture só se aplica a model_path")
+        _check(transfer_texture, "transfer_texture only applies to model_path")
     if image_labels:
         _check(bool(images) and len(image_labels) <= len(images) and all(x in LABELS for x in image_labels),
-               "image_labels inválidos")
+               "Invalid image_labels")
     paths: list[tuple[str, Path]] = []
     if model_path:
         paths.append(("model", _path(model_path, POLYGEN_MODEL_EXTENSIONS, MAX_MODEL_SIZE)))
@@ -561,21 +561,21 @@ def rodin_images(
     ~/Downloads/Hyper3D and returns local file paths, no polling or base64 in tool output.
     Defaults preview only; explicit spending approval and finite budget are required.
     """
-    _check(bool(prompt.strip()), "prompt obrigatório")
+    _check(bool(prompt.strip()), "prompt is required")
     if size is not None:
         match = re.fullmatch(r"([1-9][0-9]*)x([1-9][0-9]*)", size)
-        _check(match is not None, "size deve ser WIDTHxHEIGHT")
+        _check(match is not None, "size must be WIDTHxHEIGHT")
         width, height = map(int, match.groups())
-        _check(512 * 512 <= width * height <= 2048 * 2048, "Total de pixels fora do limite")
+        _check(512 * 512 <= width * height <= 2048 * 2048, "Total pixel count out of range")
     refs = image_paths or []
-    _check(len(refs) <= 3, "Máximo de três imagens de referência")
+    _check(len(refs) <= 3, "At most three reference images")
     paths = [_path(p, {".png", ".jpg", ".jpeg", ".webp"}, 10 * 1024 * 1024) for p in refs]
     fields = {"prompt": prompt.strip(), **({"size": size} if size is not None else {})}
     preview = {"endpoint": "images", "estimated_credits": .5, "parameters": fields,
                "files": [{"field": "images", "name": p.name} for p in paths]}
     if not approved_spend:
-        return {"submitted": False, "reason": "Aprovação explícita necessária; nenhum crédito gasto", **preview}
-    _check(math.isfinite(max_credits) and max_credits >= .5, "Requer orçamento finito max_credits >= 0.5")
+        return {"submitted": False, "reason": "Explicit approval required; no credits spent", **preview}
+    _check(math.isfinite(max_credits) and max_credits >= .5, "Requires a finite budget max_credits >= 0.5")
     directory = Path(os.getenv("RODIN_OUTPUT_DIR", "~/Downloads/Hyper3D")).expanduser().resolve()
     directory.mkdir(parents=True, exist_ok=True)
     if paths:
@@ -588,12 +588,12 @@ def rodin_images(
         payload = _api("POST", "images", json=fields)
     data = payload.get("data")
     if not isinstance(data, list) or len(data) != 1 or not isinstance(data[0], dict):
-        raise RuntimeError("Resposta de images sem uma imagem; verifique o histórico antes de repetir a operação")
+        raise RuntimeError("Images response has no image; check your history before retrying")
     item = data[0]
     try:
         content = base64.b64decode(item["b64_json"], validate=True)
     except (KeyError, TypeError, ValueError, binascii.Error) as exc:
-        raise RuntimeError("Imagem base64 inválida; verifique o histórico antes de repetir a operação") from exc
+        raise RuntimeError("Invalid base64 image; check your history before retrying") from exc
     if content.startswith(b"\x89PNG\r\n\x1a\n"):
         suffix = ".png"
     elif content.startswith(b"\xff\xd8\xff"):
@@ -601,13 +601,13 @@ def rodin_images(
     elif content.startswith(b"RIFF") and content[8:12] == b"WEBP":
         suffix = ".webp"
     else:
-        raise RuntimeError("A resposta não contém PNG/JPEG/WebP válido")
+        raise RuntimeError("The response contains no valid PNG/JPEG/WebP")
     target = directory / f"image-{uuid4().hex}{suffix}"
     try:
         with target.open("xb") as output:
             output.write(content)
     except OSError as exc:
-        raise RuntimeError("A API respondeu, mas falhou a gravação local; não repita a geração automaticamente") from exc
+        raise RuntimeError("The API responded but saving locally failed; do not retry the generation automatically") from exc
     return {"submitted": True, **preview, "actual_credits": payload.get("consumed"),
             "created": payload.get("created"),
             "saved_files": [{"path": str(target), "bytes": len(content),
@@ -641,37 +641,37 @@ def rodin_images(
 @mcp.tool()
 def rodin_status(subscription_key: str) -> dict:
     """FREE: check asynchronous task status using jobs.subscription_key (Agentic uses job.subscription_key)."""
-    _check(bool(subscription_key.strip()), "subscription_key obrigatório")
+    _check(bool(subscription_key.strip()), "subscription_key is required")
     return _api("POST", "status", json={"subscription_key": subscription_key})
 
 
 @mcp.tool()
 def rodin_download_links(task_uuid: str) -> dict:
     """FREE: fetch signed result URLs using top-level task uuid, after all statuses are Done."""
-    _check(bool(task_uuid.strip()), "task_uuid obrigatório")
+    _check(bool(task_uuid.strip()), "task_uuid is required")
     return _api("POST", "download", json={"task_uuid": task_uuid})
 
 
 def _safe_download_url(url: str) -> None:
     parsed = urlsplit(url)
     _check(parsed.scheme == 'https' and bool(parsed.hostname) and not parsed.username and not parsed.password,
-           "URL de download HTTPS inválida")
-    _check(parsed.port in (None, 443), "Porta de download não permitida")
+           "Invalid HTTPS download URL")
+    _check(parsed.port in (None, 443), "Download port not allowed")
     host = parsed.hostname
-    _check(host.lower() not in {"localhost", "localhost.localdomain"} and not host.lower().endswith(".localhost"), "Host local não permitido")
+    _check(host.lower() not in {"localhost", "localhost.localdomain"} and not host.lower().endswith(".localhost"), "Local host not allowed")
     try:
         ip = ipaddress.ip_address(host)
     except ValueError:
         ip = None
     if ip is not None:
-        _check(ip.is_global, "Endereço IP privado/reservado não permitido")
+        _check(ip.is_global, "Private or reserved IP address not allowed")
 
 
 @mcp.tool()
 def rodin_save_results(task_uuid: str) -> dict:
     """FREE: fetch signed links and download finished results into ~/Downloads/Hyper3D.
     Override destination using RODIN_OUTPUT_DIR in server process. Does not generate assets."""
-    _check(bool(task_uuid.strip()), "task_uuid obrigatório")
+    _check(bool(task_uuid.strip()), "task_uuid is required")
     data = _api("POST", "download", json={"task_uuid": task_uuid})
     directory = Path(os.getenv("RODIN_OUTPUT_DIR", "~/Downloads/Hyper3D")).expanduser().resolve()
     directory.mkdir(parents=True, exist_ok=True)
@@ -688,7 +688,7 @@ def rodin_save_results(task_uuid: str) -> dict:
             with requests.get(str(url), stream=True, timeout=(10, 120), allow_redirects=False) as res:
                 res.raise_for_status()
                 if 300 <= res.status_code < 400:
-                    raise RuntimeError("Redirecionamento de download não permitido")
+                    raise RuntimeError("Download redirects not allowed")
                 with temp.open("wb") as out:
                     for chunk in res.iter_content(1024 * 1024):
                         if chunk:
