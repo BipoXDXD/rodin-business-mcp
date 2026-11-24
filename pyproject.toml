@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rodin-business-mcp"
+version = "3.0.0"
+description = "Unofficial local MCP server for the Hyper3D Rodin Business REST API v2 with optional official OAuth 2.1 bridge."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.12"
+dependencies = [
+    "mcp>=2,<3",
+    "requests>=2.32,<3",
+]
+
+[project.scripts]
+rodin-business-mcp = "rodin_business_mcp.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
